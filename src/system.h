@@ -15,7 +15,6 @@ struct Rule
     virtual float activation_fn(float x) = 0;
 };
 
-
 struct Rule1: public Rule
 {
     vector<vector<float>> kernel()
@@ -52,6 +51,24 @@ struct Rule2: public Rule
     };
 };
 
+struct Mitosis: public Rule
+{
+    vector<vector<float>> kernel()
+    {
+        return {
+            {-0.939,  0.880, -0.939 },
+            { 0.880,  0.400,  0.880 },
+            {-0.939,  0.880, -0.939 }
+        };
+    };
+
+    float activation_fn(float x)
+    {
+        float fn = -1.0f/(0.9f*pow(x, 2.0f)+1.0f)+1.0f;
+        return common::clamp(fn, 0.0f, 1.0f);
+    };
+};
+
 struct Worms: public Rule
 {
     vector<vector<float>> kernel()
@@ -68,6 +85,25 @@ struct Worms: public Rule
         float fn = -1.0f / pow(2.0f, (0.6f*pow(x, 2.0f))) + 1.0f;
 
         return common::clamp(fn, 0.0f, 1.0f);
+    };
+};
+
+struct CGOL: public Rule
+{
+    vector<vector<float>> kernel()
+    {
+        return {
+            { 1.000,  1.000,  1.000 },
+            { 1.000,  9.000,  1.000 },
+            { 1.000,  1.000,  1.000 }
+        };
+    };
+
+    float activation_fn(float x)
+    {
+        if ((x > 2.9f && x < 3.1f) || (x > 10.9f && x < 11.1f) || (x > 11.9f && x < 12.1f))
+            return 1.0f;
+        return 0.0f;
     };
 };
 
@@ -88,6 +124,23 @@ struct SlimeMold: public Rule
     };
 };
 
+struct Fabric: public Rule
+{
+    vector<vector<float>> kernel()
+    {
+        return {
+            { 0.037,  0.430, -0.737 },
+            { 0.406, -0.321, -0.319 },
+            {-0.458,  0.416,  0.478 }
+        };
+    };
+
+    float activation_fn(float x)
+    {
+        float fn = (exp(2.0f*x)-1.0f)/(exp(2.0f*x)+1.0f);
+        return common::clamp(fn, 0.0f, 1.0f);
+    };
+};
 
 
 class System
@@ -106,6 +159,8 @@ public:
 
 System::System()
 {
+    srand(clock());
+
     _data_back = new float *[WIDTH];
     _data_front = new float *[WIDTH];
 
@@ -125,8 +180,10 @@ System::System()
             
             if (rand()%1000 < 1000)
             {
-                _data_front[i][j] = (rand()%100) / 100.0f;
-                _data_back[i][j] =  (rand()%100) / 100.0f;
+                float f = (rand()%100) / 100.0f;
+
+                _data_front[i][j] = f;
+                _data_back[i][j] =  f;
             }
         }
     }
@@ -138,13 +195,15 @@ float System::_apply_kernel(int r, int c, vector<vector<float>> kernel)
 {
     float sum = 0.0f;
 
-    int r0 = abs(r-1)%WIDTH;
-    int r1 = abs(r+0)%WIDTH;
-    int r2 = abs(r+1)%WIDTH;
+    // ((val % 360) + 360) % 360
 
-    int c0 = abs(c-1)%WIDTH;
-    int c1 = abs(c+0)%WIDTH;
-    int c2 = abs(c+1)%WIDTH;
+    int r0 = (((r-1) % WIDTH) + WIDTH) % WIDTH;
+    int r1 = (((r+0) % WIDTH) + WIDTH) % WIDTH;
+    int r2 = (((r+1) % WIDTH) + WIDTH) % WIDTH;
+
+    int c0 = (((c-1) % WIDTH) + WIDTH) % WIDTH;
+    int c1 = (((c+0) % WIDTH) + WIDTH) % WIDTH;
+    int c2 = (((c+1) % WIDTH) + WIDTH) % WIDTH;
 
     sum += kernel[0][0] * _data_front[r0][c0];
     sum += kernel[0][1] * _data_front[r0][c1];
@@ -175,7 +234,9 @@ void System::tick(Rule *rule)
 
     for (int i=0; i<WIDTH; i++)
         for (int j=0; j<WIDTH; j++)
-            _data_front[i][j] = _data_back[i][j];
+        {
+            _data_front[i][j] = 0.01f * _data_front[i][j] + 0.99f * _data_back[i][j];
+        }
 }
 
 
@@ -185,7 +246,10 @@ void System::draw(Rule *rule, Renderer &renderer)
     {
         for (int j=0; j<WIDTH; j++)
         {
-            renderer.pixel(vec2(i, j), vec3(255*_data_front[i][j]));
+            float r = common::clamp(255.0f * _data_front[i][j], 0.0f, 255.0f);
+            float g = r;
+            float b = 1.0f / r;
+            renderer.pixel(vec2(i, j), vec3(r, g, b));
         }
     }
 }
