@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "random": "cpp",
+        "optional": "cpp",
+        "__locale": "cpp"
+    }
+}
