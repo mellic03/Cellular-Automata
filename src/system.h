@@ -1,12 +1,14 @@
 #pragma once
 
 #include <vector>
+#include <thread>
+#include <condition_variable>
 #include "../softrastCPP/softrast/softrast.h"
 
 using namespace std;
 
 
-#define WIDTH 500
+#define WIDTH 300
 
 
 struct Rule
@@ -36,18 +38,19 @@ struct Rule2: public Rule
 {
     vector<vector<float>> kernel()
     {
-        return {
-            { 0.050, -0.250,  0.050 },
-            {-0.250,  0.850, -0.250 },
-            { 0.050, -0.250,  0.050 }
+        vector<vector<float>> k {
+            { 0.800, -0.850,  0.800 },
+            {-0.850, -0.200, -0.850 },
+            { 0.800, -0.850,  0.800 }
         };
+
+        return k;
     };
 
     float activation_fn(float x)
     {
-        float fn = x*x;
-
-        return common::clamp(fn, 0.0f, 1.0f);
+        float f = -1.0f / (0.89f * x*x + 1.0f) + 1.0f;
+        return common::clamp(f, 0.0f, 1.0f);
     };
 };
 
@@ -109,18 +112,27 @@ struct CGOL: public Rule
 
 struct SlimeMold: public Rule
 {
-    vector<vector<float>> kernel()
+    vector<vector<float>> k;
+
+    SlimeMold()
     {
-        return {
+        k = vector<vector<float>>
+        {
             { 0.800, -0.850,  0.800 },
             {-0.850, -0.200, -0.850 },
             { 0.800, -0.850,  0.800 }
         };
+    }
+
+    vector<vector<float>> kernel()
+    {
+        return k;
     };
 
     float activation_fn(float x)
     {
-        return common::clamp(-1.0f / (0.89f*pow(x, 2.0f) + 1.0f) + 1.0f, 0.0f, 1.0f);
+        float f = -1.0f / (0.89f * x*x + 1.0f) + 1.0f;
+        return common::clamp(f, 0.0f, 1.0f);
     };
 };
 
@@ -146,28 +158,46 @@ struct Fabric: public Rule
 class System
 {
 private:
-    float **_data_back, **_data_front;
+    bool a = false, b = false;
+    mutex _m;
+    int num_done = 0;
+    float **_data_back, **_data_front, **_data_front2;
     float _apply_kernel(int r, int c, vector<vector<float>> kernel);
 
 public:
-    System();
+    System(string hashkey);
     void tick(Rule *rule);
+    void l_tick(Rule *rule);
+    void r_tick(Rule *rule);
     void draw(Rule *rule, Renderer &renderer);
-
+    void l_draw(Rule *rule, Renderer &renderer);
+    void r_draw(Rule *rule, Renderer &renderer);
+    auto &data() { return _data_front; };
 };
 
 
-System::System()
+System::System(string hashkey)
 {
-    srand(clock());
+    unsigned int seed = 0;
+    int count = 0;
+    for (int i=0; i<hashkey.length(); i++)
+        seed += hashkey[i] ^ i;
+
+    cout << "seed: " << seed << endl;
+
+    srand(seed);
 
     _data_back = new float *[WIDTH];
     _data_front = new float *[WIDTH];
+    _data_front2 = new float *[WIDTH];
+    
 
     for (int i=0; i<WIDTH; i++)
     {
         _data_back[i]  = new float [WIDTH];
         _data_front[i] = new float [WIDTH];
+        _data_front2[i] = new float [WIDTH];
+        
     }
 
 
@@ -178,23 +208,25 @@ System::System()
             _data_front[i][j] = 0.0f;
             _data_back[i][j] = 0.0f;
             
-            if (rand()%1000 < 1000)
+            if (rand()%1000 < 11155)
             {
                 float f = (rand()%100) / 100.0f;
 
                 _data_front[i][j] = f;
+                _data_front2[i][j] = f;
                 _data_back[i][j] =  f;
             }
         }
     }
-}
 
+}
 
 
 float System::_apply_kernel(int r, int c, vector<vector<float>> kernel)
 {
     float sum = 0.0f;
 
+    __m128 _sum = _mm_set1_ps(0.0f);
     // ((val % 360) + 360) % 360
 
     int r0 = (((r-1) % WIDTH) + WIDTH) % WIDTH;
@@ -221,13 +253,15 @@ float System::_apply_kernel(int r, int c, vector<vector<float>> kernel)
 }
 
 
+
+
 void System::tick(Rule *rule)
 {
     for (int i=0; i<WIDTH; i++)
     {
         for (int j=0; j<WIDTH; j++)
         {
-            _data_back[i][j] = _apply_kernel(i, j, rule->kernel());
+            _data_back[i][j] = -1 * _apply_kernel(i, j, rule->kernel());
             _data_back[i][j] = rule->activation_fn(_data_back[i][j]);
         }
     }
@@ -235,9 +269,36 @@ void System::tick(Rule *rule)
     for (int i=0; i<WIDTH; i++)
         for (int j=0; j<WIDTH; j++)
         {
-            _data_front[i][j] = 0.01f * _data_front[i][j] + 0.99f * _data_back[i][j];
+            _data_front[i][j] = _data_back[i][j];
+            _data_front2[i][j] = 0.9*_data_front2[i][j] + 0.15*_data_front[i][j];
         }
 }
+
+
+void System::l_tick(Rule *rule)
+{
+    for (int i=0; i<WIDTH/2; i++)
+    {
+        for (int j=0; j<WIDTH; j++)
+        {
+            _data_back[i][j] = _apply_kernel(i, j, rule->kernel());
+            _data_back[i][j] = rule->activation_fn(_data_back[i][j]);
+        }
+    }
+}
+
+void System::r_tick(Rule *rule)
+{
+    for (int i=WIDTH/2; i<WIDTH; i++)
+    {
+        for (int j=0; j<WIDTH; j++)
+        {
+            _data_back[i][j] = _apply_kernel(i, j, rule->kernel());
+            _data_back[i][j] = rule->activation_fn(_data_back[i][j]);
+        }
+    }
+}
+
 
 
 void System::draw(Rule *rule, Renderer &renderer)
@@ -246,9 +307,48 @@ void System::draw(Rule *rule, Renderer &renderer)
     {
         for (int j=0; j<WIDTH; j++)
         {
-            float r = common::clamp(255.0f * _data_front[i][j], 0.0f, 255.0f);
-            float g = r;
-            float b = 1.0f / r;
+            _data_front[i][j] = _data_back[i][j];
+            _data_front2[i][j] = 0.9*_data_front2[i][j] + 0.15*_data_front[i][j];
+
+            float b = common::clamp(555.0f * _data_front2[i][j], 0.0f, 255.0f);
+            float g = b;
+            float r = b / 2.0f;
+            renderer.pixel(vec2(i, j), vec3(r, g, b));
+        }
+    }
+}
+
+
+void System::l_draw(Rule *rule, Renderer &renderer)
+{
+    for (int i=0; i<WIDTH/2; i++)
+    {
+        for (int j=0; j<WIDTH; j++)
+        {
+            _data_front[i][j] = _data_back[i][j];
+            _data_front2[i][j] = 0.9*_data_front2[i][j] + 0.15*_data_front[i][j];
+
+            float b = common::clamp(555.0f * _data_front2[i][j], 0.0f, 255.0f);
+            float g = b;
+            float r = b / 2.0f;
+            renderer.pixel(vec2(i, j), vec3(r, g, b));
+        }
+    }
+}
+
+
+void System::r_draw(Rule *rule, Renderer &renderer)
+{
+    for (int i=WIDTH/2; i<WIDTH; i++)
+    {
+        for (int j=0; j<WIDTH; j++)
+        {
+            _data_front[i][j] = _data_back[i][j];
+            _data_front2[i][j] = 0.9*_data_front2[i][j] + 0.15*_data_front[i][j];
+
+            float b = common::clamp(555.0f * _data_front2[i][j], 0.0f, 255.0f);
+            float g = b;
+            float r = b / 2.0f;
             renderer.pixel(vec2(i, j), vec3(r, g, b));
         }
     }
