@@ -8,7 +8,7 @@
 using namespace std;
 
 
-#define WIDTH 300
+#define WIDTH 248
 
 
 struct Rule
@@ -310,9 +310,10 @@ void System::draw(Rule *rule, Renderer &renderer)
             _data_front[i][j] = _data_back[i][j];
             _data_front2[i][j] = 0.9*_data_front2[i][j] + 0.15*_data_front[i][j];
 
-            float b = common::clamp(555.0f * _data_front2[i][j], 0.0f, 255.0f);
-            float g = b;
-            float r = b / 2.0f;
+            float g = common::clamp(555.0f * _data_front2[i][j], 0.0f, 255.0f);
+            float b = g * 1.2f;
+            float r = g / 1.2f;
+
             renderer.pixel(vec2(i, j), vec3(r, g, b));
         }
     }
@@ -347,8 +348,8 @@ void System::r_draw(Rule *rule, Renderer &renderer)
             _data_front2[i][j] = 0.9*_data_front2[i][j] + 0.15*_data_front[i][j];
 
             float b = common::clamp(555.0f * _data_front2[i][j], 0.0f, 255.0f);
-            float g = b;
-            float r = b / 2.0f;
+            float g = b / 2.0f;
+            float r = b * 2.0f;
             renderer.pixel(vec2(i, j), vec3(r, g, b));
         }
     }

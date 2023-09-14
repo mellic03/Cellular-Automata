@@ -8,7 +8,7 @@ int main(int argc, char **argv)
 {
     Renderer ren(argv[1], WIDTH, WIDTH, 1200, 1200);
     System sys(argv[1]);
-    Worms r1;
+    SlimeMold r1;
 
     auto a = SDL_GetTicks();
     auto b = SDL_GetTicks();
